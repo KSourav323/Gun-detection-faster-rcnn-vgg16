@@ -7,7 +7,7 @@ class Config:
 
 		self.verbose = True
 
-		self.network = 'resnet50'
+		self.network = 'vgg'
 
 		# setting for data augmentation
 		self.use_horizontal_flips = False

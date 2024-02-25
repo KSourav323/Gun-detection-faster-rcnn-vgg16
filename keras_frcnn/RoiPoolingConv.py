@@ -35,16 +35,10 @@ class RoiPoolingConv(Layer):
         super(RoiPoolingConv, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        if self.data_format == 'th':
-            self.nb_channels = input_shape[0][1]
-        elif self.data_format == 'channels_last':
-            self.nb_channels = input_shape[0][3]
+        self.nb_channels = input_shape[0][3]
 
     def compute_output_shape(self, input_shape):
-        if self.data_format == 'th':
-            return None, self.num_rois, self.nb_channels, self.pool_size, self.pool_size
-        else:
-            return None, self.num_rois, self.pool_size, self.pool_size, self.nb_channels
+        return None, self.num_rois, self.pool_size, self.pool_size, self.nb_channels
 
     def call(self, x, mask=None):
 
@@ -68,9 +62,6 @@ class RoiPoolingConv(Layer):
             col_length = h / float(self.pool_size)
 
             num_pool_regions = self.pool_size
-
-            #NOTE: the RoiPooling implementation differs between theano and tensorflow due to the lack of a resize op
-            # in theano. The theano implementation is much less efficient and leads to long compile times
 
             if self.data_format == 'th':
                 for jy in range(num_pool_regions):
@@ -107,11 +98,7 @@ class RoiPoolingConv(Layer):
 
         final_output = K.concatenate(outputs, axis=0)
         final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size, self.pool_size, self.nb_channels))
-
-        if self.data_format == 'th':
-            final_output = K.permute_dimensions(final_output, (0, 1, 4, 2, 3))
-        else:
-            final_output = K.permute_dimensions(final_output, (0, 1, 2, 3, 4))
+        final_output = K.permute_dimensions(final_output, (0, 1, 2, 3, 4))
 
         return final_output
     

@@ -16,13 +16,6 @@ from keras import backend as K
 from keras_frcnn.RoiPoolingConv import RoiPoolingConv
 
 
-def get_weight_path():
-    if K.image_data_format() == 'th':
-        print('pretrained weights not available for VGG with theano backend')
-        return
-    else:
-        return 'vgg16_weights_tf_data_format_tf_kernels.h5'
-
 
 def get_img_output_length(width, height):
     def get_output_length(input_length):
@@ -32,12 +25,7 @@ def get_img_output_length(width, height):
 
 def nn_base(input_tensor=None, trainable=False):
 
-
-    # Determine proper input shape
-    if K.image_data_format() == 'th':
-        input_shape = (3, None, None)
-    else:
-        input_shape = (None, None, 3)
+    input_shape = (None, None, 3)
 
     if input_tensor is None:
         img_input = Input(shape=input_shape)
@@ -47,10 +35,7 @@ def nn_base(input_tensor=None, trainable=False):
         else:
             img_input = input_tensor
 
-    if K.image_data_format() == 'channels_last':
-        bn_axis = 3
-    else:
-        bn_axis = 1
+    bn_axis = 3
 
     # Block 1
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1')(img_input)
@@ -95,14 +80,9 @@ def rpn(base_layers, num_anchors):
 def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=False):
 
     # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
-
-    if K.backend() == 'tensorflow':
-        pooling_regions = 7
-        input_shape = (num_rois,7,7,512)
-    elif K.backend() == 'theano':
-        pooling_regions = 7
-        input_shape = (num_rois,512,7,7)
-
+    pooling_regions = 7
+    input_shape = (num_rois,7,7,512)
+    
     out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([base_layers, input_rois])
 
     out = TimeDistributed(Flatten(name='flatten'))(out_roi_pool)

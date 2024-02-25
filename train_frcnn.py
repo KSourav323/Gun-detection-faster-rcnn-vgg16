@@ -4,79 +4,33 @@ import pprint
 import sys
 import time
 import numpy as np
-from optparse import OptionParser
 import pickle
 import tensorflow as tf
 from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.layers import Input
 from keras.models import Model
+from keras.utils import Progbar
+
 from keras_frcnn import config, data_generators
 from keras_frcnn import losses as losses
 import keras_frcnn.roi_helpers as roi_helpers
-from keras.utils import Progbar
+from keras_frcnn.simple_parser import get_data
+from keras_frcnn import vgg as nn
 
 sys.setrecursionlimit(40000)
 
-parser = OptionParser()
-
-parser.add_option("-p", "--path", dest="train_path", help="Path to training data.", default="annotations.txt")
-parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
-				default="simple")
-parser.add_option("-n", "--num_rois", type="int", dest="num_rois", help="Number of RoIs to process at once.", default=32)
-parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.", default='vgg')
-parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal flips in training. (Default=false).", action="store_true", default=False)
-parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical flips in training. (Default=false).", action="store_true", default=False)
-parser.add_option("--rot", "--rot_90", dest="rot_90", help="Augment with 90 degree rotations in training. (Default=false).",
-				  action="store_true", default=False)
-parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=20)
-parser.add_option("--config_filename", dest="config_filename", help=
-				"Location to store all the metadata related to the training (to be used when testing).",
-				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_frcnn.hdf5')
-parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.", default='./vgg_input.hdf5')
-
-(options, args) = parser.parse_args()
-
-if not options.train_path:   # if filename is not given
-	parser.error('Error: path to training data must be specified. Pass --path to command line')
-
-if options.parser == 'pascal_voc':
-	from keras_frcnn.pascal_voc_parser import get_data
-elif options.parser == 'simple':
-	from keras_frcnn.simple_parser import get_data
-else:
-	raise ValueError("Command line option parser must be one of 'pascal_voc' or 'simple'")
-
-# pass the settings from the command line, and persist them in the config object
 C = config.Config()
 
-C.use_horizontal_flips = bool(options.horizontal_flips)
-C.use_vertical_flips = bool(options.vertical_flips)
-C.rot_90 = bool(options.rot_90)
+C.use_horizontal_flips = False
+C.use_vertical_flips = False
+C.rot_90 = False
+C.model_path = './models/model_frcnn.hdf5'
+C.num_rois = 32
+C.network = 'vgg'
+C.base_net_weights = './models/vgg_input.hdf5'
 
-C.model_path = options.output_weight_path
-C.num_rois = int(options.num_rois)
-
-if options.network == 'vgg':
-	C.network = 'vgg'
-	from keras_frcnn import vgg as nn
-elif options.network == 'resnet50':
-	from keras_frcnn import resnet as nn
-	C.network = 'resnet50'
-else:
-	print('Not a valid model')
-	raise ValueError
-
-
-# check if weight path was passed via command line
-if options.input_weight_path:
-	C.base_net_weights = options.input_weight_path
-else:
-	# set the path to weights based on backend and model
-	C.base_net_weights = nn.get_weight_path()
-
-all_imgs, classes_count, class_mapping = get_data(options.train_path)
+all_imgs, classes_count, class_mapping = get_data("./dataset/annotations.txt")
 
 if 'bg' not in classes_count:
 	classes_count['bg'] = 0
@@ -90,7 +44,7 @@ print('Training images per class:')
 pprint.pprint(classes_count)
 print('Num classes (including bg) = {}'.format(len(classes_count)))
 
-config_output_filename = options.config_filename
+config_output_filename = "config.pickle"
 
 with open(config_output_filename, 'wb') as config_f:
 	pickle.dump(C,config_f)
@@ -110,10 +64,8 @@ print('Num val samples {}'.format(len(val_imgs)))
 data_gen_train = data_generators.get_anchor_gt(train_imgs, classes_count, C, nn.get_img_output_length, K.image_data_format(), mode='train')
 data_gen_val = data_generators.get_anchor_gt(val_imgs, classes_count, C, nn.get_img_output_length,K.image_data_format(), mode='val')
 
-if K.image_data_format() == 'th':
-	input_shape_img = (3, None, None)
-else:
-	input_shape_img = (None, None, 3)
+
+input_shape_img = (None, None, 3)
 
 img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(None, 4))
@@ -138,8 +90,7 @@ try:
 	model_rpn.load_weights(C.base_net_weights, by_name=True)
 	model_classifier.load_weights(C.base_net_weights, by_name=True)
 except:
-	print('Could not load pretrained model weights. Weights can be found in the keras application folder \
-		https://github.com/fchollet/keras/tree/master/keras/applications')
+	print('Could not load pretrained model weights.')
 
 optimizer = Adam(learning_rate=1e-4)
 optimizer_classifier = Adam(learning_rate=1e-4)
@@ -148,7 +99,7 @@ model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss
 model_all.compile(optimizer='sgd', loss='mae')
 
 epoch_length = 128
-num_epochs = int(options.num_epochs)
+num_epochs = 1
 iter_num = 0
 
 losses = np.zeros((epoch_length, 5))
@@ -159,6 +110,9 @@ start_time = time.time()
 best_loss = np.Inf
 
 class_mapping_inv = {v: k for k, v in class_mapping.items()}
+
+
+#################################################################################
 print('Starting training')
 
 vis = True
@@ -184,8 +138,7 @@ for epoch_num in range(num_epochs):
 
 			P_rpn = model_rpn.predict_on_batch(X)
 
-			R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_data_format(), use_regr=True, overlap_thresh=0.7, max_boxes=300)
-			# note: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
+			R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], K.image_data_format(), use_regr=True, overlap_thresh=0.7, max_boxes=300)
 			X2, Y1, Y2, IouS = roi_helpers.calc_iou(R, img_data, C, class_mapping)
 
 			if X2 is None:

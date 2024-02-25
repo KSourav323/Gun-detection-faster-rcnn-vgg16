@@ -1,9 +1,13 @@
 import numpy as np
 import pdb
 import math
+
+from keras_frcnn.config import Config
 from . import data_generators
 import copy
 
+with open('config.pickle', 'r') as file:
+	C=Config()
 
 def calc_iou(R, img_data, C, class_mapping):
 
@@ -152,8 +156,6 @@ def apply_regr_np(X, T):
 		return X
 
 def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
-	# code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
-	# if there are no boxes, return an empty list
 	if len(boxes) == 0:
 		return []
 
@@ -166,8 +168,6 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 	np.testing.assert_array_less(x1, x2)
 	np.testing.assert_array_less(y1, y2)
 
-	# if the bounding boxes integers, convert them to floats --
-	# this is important since we'll be doing a bunch of divisions
 	if boxes.dtype.kind == "i":
 		boxes = boxes.astype("float")
 
@@ -220,7 +220,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 	return boxes, probs
 
 import time
-def rpn_to_roi(rpn_layer, regr_layer, C, data_format, use_regr=True, max_boxes=300,overlap_thresh=0.9):
+def rpn_to_roi(rpn_layer, regr_layer, data_format, use_regr=True, max_boxes=300,overlap_thresh=0.9):
 
 	regr_layer = regr_layer / C.std_scaling
 
@@ -229,28 +229,18 @@ def rpn_to_roi(rpn_layer, regr_layer, C, data_format, use_regr=True, max_boxes=3
 
 	assert rpn_layer.shape[0] == 1
 
-	if data_format == 'th':
-		(rows,cols) = rpn_layer.shape[2:]
-
-	elif data_format == 'channels_last':
-		(rows, cols) = rpn_layer.shape[1:3]
+	(rows, cols) = rpn_layer.shape[1:3]
 
 	curr_layer = 0
-	if data_format == 'channels_last':
-		A = np.zeros((4, rpn_layer.shape[1], rpn_layer.shape[2], rpn_layer.shape[3]))
-	elif data_format == 'th':
-		A = np.zeros((4, rpn_layer.shape[2], rpn_layer.shape[3], rpn_layer.shape[1]))
-
+	A = np.zeros((4, rpn_layer.shape[1], rpn_layer.shape[2], rpn_layer.shape[3]))
 	for anchor_size in anchor_sizes:
 		for anchor_ratio in anchor_ratios:
 
 			anchor_x = (anchor_size * anchor_ratio[0])/C.rpn_stride
 			anchor_y = (anchor_size * anchor_ratio[1])/C.rpn_stride
-			if data_format == 'th':
-				regr = regr_layer[0, 4 * curr_layer:4 * curr_layer + 4, :, :]
-			else:
-				regr = regr_layer[0, :, :, 4 * curr_layer:4 * curr_layer + 4]
-				regr = np.transpose(regr, (2, 0, 1))
+			
+			regr = regr_layer[0, :, :, 4 * curr_layer:4 * curr_layer + 4]
+			regr = np.transpose(regr, (2, 0, 1))
 
 			X, Y = np.meshgrid(np.arange(cols),np. arange(rows))
 
