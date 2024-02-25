@@ -1,1 +1,0 @@
-# Gun-detection-faster-rcnn-vgg16
